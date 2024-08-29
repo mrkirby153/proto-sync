@@ -8,7 +8,7 @@ rustPlatform.buildRustPackage {
   pname = "proto-sync";
   version = "0.1.0";
   src = ./.;
-  cargoHash = "sha256-Ta0TxF6CtHBLNWyXwDWCS2r1FkivExvlQT6rGfqdyj4=";
+  cargoHash = "sha256-SYhowIC30gbOVGS4+WdEbYLFoJBpCquFKTjvB7+vmfY=";
   meta = {
     description = "A tool to manage out of repo protobufs";
     license = lib.licenses.mit;

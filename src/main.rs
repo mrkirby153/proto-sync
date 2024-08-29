@@ -2,15 +2,21 @@ use std::path::Path;
 
 use anyhow::Result;
 
-use proto_sync::manifest::Manifest;
-use tracing::info;
+use proto_sync::{
+    manifest::Manifest,
+    store::{get_store_path, ignore_path},
+    sync_protobufs,
+};
 
 fn main() -> Result<()> {
     tracing_subscriber::fmt::init();
 
     let manifest = Manifest::load(Path::new("proto-sync.toml")).unwrap();
 
-    info!("Loaded manifest: {:?}", manifest);
+    let store_path = get_store_path()?;
+    ignore_path(&store_path)?;
+
+    sync_protobufs(&manifest)?;
 
     Ok(())
 }
