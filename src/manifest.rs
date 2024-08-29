@@ -8,8 +8,6 @@ pub struct Manifest {
     /// A list of manifest entries declaring what protobufs to download
     #[serde(rename = "entry")]
     pub entries: Vec<ManifestEntry>,
-    /// If generated directories should be ignored
-    pub gitignore: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
