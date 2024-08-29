@@ -57,20 +57,18 @@ pub fn update_repo(repo_url: &str, path: &Path, rev: &str) -> Result<()> {
 
     let current_ref = repo.head()?.peel_to_commit()?.id();
 
-    let target_object = if commit.is_err() {
-        debug!("Rev {} is not a commit. Fetching", rev);
-        origin.fetch(&[rev], None, None)?;
+    let target_object = match commit {
+        Ok(commit) => commit.into_object(),
+        Err(_) => {
+            debug!("Rev {} is not a commit. Fetching", rev);
+            origin.fetch(&[rev], None, None)?;
 
-        let head_commit = repo
-            .find_reference("FETCH_HEAD")?
-            .peel_to_commit()
-            .map_err(|_| Error::RevNotFound(rev.to_string()))?;
-        head_commit.into_object()
-    } else {
-        // This should always succeed
-        commit
-            .unwrap_or_else(|_| panic!("COuld not find a commit with rev: {}", rev))
-            .into_object()
+            let head_commit = repo
+                .find_reference("FETCH_HEAD")?
+                .peel_to_commit()
+                .map_err(|_| Error::RevNotFound(rev.to_string()))?;
+            head_commit.into_object()
+        }
     };
 
     debug!("Checking out revision {} -> {}", rev, target_object.id());
