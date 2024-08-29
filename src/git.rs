@@ -1,8 +1,11 @@
-use std::path::Path;
+use std::{fs, path::Path};
 
 use anyhow::Result;
 use auth_git2::GitAuthenticator;
-use git2::{build::RepoBuilder, Config, FetchOptions, Oid, RemoteCallbacks, Repository};
+use git2::{
+    build::RepoBuilder, Config, FetchOptions, Object, Oid, RemoteCallbacks, Repository, Status,
+    StatusOptions, Statuses,
+};
 use thiserror::Error;
 use tracing::{debug, warn};
 
@@ -12,6 +15,8 @@ enum Error {
     GitError(#[from] anyhow::Error),
     #[error("Rev not found: {0}")]
     RevNotFound(String),
+    #[error("Repo not found")]
+    RepoNotFound,
 }
 
 /// Updates a repository at the given path to the given revision
@@ -33,7 +38,7 @@ pub fn update_repo(repo_url: &str, path: &Path, rev: &str) -> Result<()> {
     };
 
     // Check that the origin is the same
-    let origin = repo.find_remote("origin")?;
+    let mut origin = repo.find_remote("origin")?;
     let url = origin
         .url()
         .ok_or_else(|| anyhow::anyhow!("No URL for remote"))?;
@@ -46,37 +51,56 @@ pub fn update_repo(repo_url: &str, path: &Path, rev: &str) -> Result<()> {
         return update_repo(repo_url, path, rev);
     }
 
+    // Check if the reference is a commit
+    let target = Oid::from_str(rev);
+    let commit = target.and_then(|oid| repo.find_commit(oid));
+
     let current_ref = repo.head()?.peel_to_commit()?.id();
 
-    debug!("Currently on {:?}", current_ref);
+    let target_object = if commit.is_err() {
+        debug!("Rev {} is not a commit. Fetching", rev);
+        origin.fetch(&[rev], None, None)?;
 
-    let object = match repo.revparse_single(rev) {
-        Ok(object) => object,
-        Err(e) => {
-            debug!("Revision not found, trying to find it as an oid: {}", e);
-            let oid = Oid::from_str(rev);
-            match oid {
-                Ok(oid) => repo.find_commit(oid)?.into_object(),
-                Err(_) => {
-                    return Err(Error::RevNotFound(rev.to_string()).into());
-                }
-            }
-        }
+        let head_commit = repo
+            .find_reference("FETCH_HEAD")?
+            .peel_to_commit()
+            .map_err(|_| Error::RevNotFound(rev.to_string()))?;
+        head_commit.into_object()
+    } else {
+        // This should always succeed
+        commit
+            .unwrap_or_else(|_| panic!("COuld not find a commit with rev: {}", rev))
+            .into_object()
     };
 
-    debug!("Checking out revision {} -> {}", rev, object.id());
+    debug!("Checking out revision {} -> {}", rev, target_object.id());
 
-    if current_ref == object.id() {
-        debug!("Already on revision {}", current_ref);
+    if current_ref == target_object.id() {
+        let dirty = is_dirty(&repo)?;
+        debug!(
+            "Already on revision {}. Dirty? {}",
+            target_object.id(),
+            dirty
+        );
+        if dirty {
+            hard_reset(&repo, &target_object)?;
+        }
         return Ok(());
     }
 
-    if let Err(e) = repo.set_head_detached(object.id()) {
+    repo.checkout_tree(&target_object, None)?;
+    let dirty = is_dirty(&repo)?;
+
+    if dirty {
+        debug!("Repo is ditry. Hard resetting");
+        hard_reset(&repo, &target_object)?;
+    }
+
+    if let Err(e) = repo.set_head_detached(target_object.id()) {
         debug!("Failed to set head to revision: {}", e);
     }
-    repo.checkout_tree(&object, None)?;
 
-    debug!("Checkout out revision {}", rev);
+    debug!("Checked out revision {} {}", rev, target_object.id());
 
     Ok(())
 }
@@ -97,4 +121,52 @@ fn clone_repo(repo: &str, path: &Path) -> Result<Repository> {
     builder.fetch_options(fetch_options);
 
     Ok(builder.clone(repo, path)?)
+}
+
+fn is_dirty(repo: &Repository) -> Result<bool> {
+    Ok(!get_status(repo)?.is_empty())
+}
+
+fn hard_reset(repo: &Repository, object: &Object) -> Result<()> {
+    debug!("Hard resetting to {}", object.id());
+
+    repo.reset(object, git2::ResetType::Hard, None)?;
+
+    let statuses = get_status(repo)?;
+
+    let repo_root = repo.path().parent();
+    match repo_root {
+        None => {
+            return Err(Error::RepoNotFound.into());
+        }
+        Some(repo_root) => {
+            if !statuses.is_empty() {
+                debug!("Repo is dirty after reset. Performing clean");
+                statuses
+                    .iter()
+                    .filter(|s| s.status() == Status::WT_NEW)
+                    .for_each(|s| {
+                        if let Some(path) = s.path() {
+                            let path = repo_root.join(path);
+                            if path.is_file() {
+                                if let Err(e) = fs::remove_file(&path) {
+                                    warn!("Unable to delete file {}: {}", path.display(), e);
+                                }
+                            } else if let Err(e) = fs::remove_dir_all(&path) {
+                                warn!("Unable to delete directory {}: {}", path.display(), e)
+                            }
+                        }
+                    });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn get_status(repo: &Repository) -> Result<Statuses> {
+    let mut opts = StatusOptions::new();
+    opts.include_untracked(true);
+
+    repo.statuses(Some(&mut opts)).map_err(|e| e.into())
 }
