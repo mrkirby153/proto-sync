@@ -1,5 +1,7 @@
 use std::{
     collections::HashSet,
+    fs::{self, remove_dir_all},
+    io,
     path::{Path, PathBuf},
 };
 
@@ -41,6 +43,8 @@ pub fn sync_protobufs(manifest: &Manifest) -> Result<()> {
         deploy_protos(destination, entry)?;
     }
 
+    clean_up_old_paths(manifest)?;
+
     Ok(())
 }
 
@@ -66,13 +70,49 @@ fn deploy_protos(source: PathBuf, entry: &ManifestEntry) -> Result<()> {
     std::fs::create_dir_all(destination)?;
     ignore_path(destination)?;
 
-    for entry in std::fs::read_dir(source)? {
-        let entry = entry?;
-        let path = entry.path();
-        let file_name = path.file_name().unwrap().to_str().unwrap();
-        debug!("Copying {}", file_name);
-        std::fs::copy(&path, destination.join(file_name))?;
+    copy_dir(source, destination)?;
+
+    Ok(())
+}
+
+fn clean_up_old_paths(manifest: &Manifest) -> Result<()> {
+    let store_path = get_store_path()?;
+    let mut seen_paths = HashSet::new();
+
+    for entry in &manifest.entries {
+        let key = digest(entry.url.as_bytes());
+        seen_paths.insert(key);
     }
 
+    info!("Seen paths: {:?}", seen_paths);
+
+    for entry in std::fs::read_dir(&store_path)? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_file() {
+            continue;
+        }
+        let file_name = path.file_name().unwrap().to_str().unwrap();
+        if !seen_paths.contains(file_name) {
+            debug!("Removing old repository {}", path.display());
+            remove_dir_all(path)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn copy_dir(src: impl AsRef<Path>, dest: impl AsRef<Path>) -> io::Result<()> {
+    fs::create_dir_all(&dest)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if file_type.is_dir() {
+            copy_dir(entry.path(), dest.as_ref().join(entry.file_name()))?;
+        } else {
+            debug!("Copying file {}", entry.path().display());
+            fs::copy(entry.path(), dest.as_ref().join(entry.file_name()))?;
+        }
+    }
     Ok(())
 }
