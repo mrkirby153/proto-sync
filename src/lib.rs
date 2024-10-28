@@ -14,13 +14,25 @@ use tracing::{debug, info};
 pub mod git;
 pub mod manifest;
 
+pub mod build;
 pub mod store;
 
+pub struct SyncOptions {
+    pub base_path: PathBuf,
+    pub ignore_generated: bool,
+}
+
 /// Synchronizes all protobuf files in the manifest
-pub fn sync_protobufs(manifest: &Manifest) -> Result<()> {
+pub fn sync_protobufs(
+    manifest: &Manifest,
+    sync_options: Option<SyncOptions>,
+) -> Result<Vec<Box<Path>>> {
     let store_path = get_store_path()?;
+    let sync_options = sync_options.unwrap_or_default();
 
     let mut seen_paths = HashSet::new();
+
+    let mut generated_protos = Vec::new();
 
     for entry in &manifest.entries {
         info!("Synchronizing protofs from {}", entry.url);
@@ -40,20 +52,31 @@ pub fn sync_protobufs(manifest: &Manifest) -> Result<()> {
             info!("Already updated {}", entry.url);
         }
 
-        deploy_protos(destination, entry)?;
+        let result = deploy_protos(
+            destination,
+            entry,
+            &sync_options.base_path,
+            sync_options.ignore_generated,
+        )?;
+        generated_protos.extend(result);
     }
 
     clean_up_old_paths(manifest)?;
 
-    Ok(())
+    Ok(generated_protos)
 }
 
-fn deploy_protos(source: PathBuf, entry: &ManifestEntry) -> Result<()> {
+fn deploy_protos(
+    source: PathBuf,
+    entry: &ManifestEntry,
+    base_path: &Path,
+    ignore: bool,
+) -> Result<Vec<Box<Path>>> {
     let dest_dir = &entry.dest_directory;
     let destination = if let Some(dest_dir) = dest_dir {
-        Path::new(dest_dir)
+        base_path.join(dest_dir)
     } else {
-        Path::new(&entry.src_directory)
+        base_path.join(&entry.src_directory)
     };
     let source = source.join(&entry.src_directory);
     debug!(
@@ -64,15 +87,17 @@ fn deploy_protos(source: PathBuf, entry: &ManifestEntry) -> Result<()> {
 
     if destination.exists() {
         debug!("Removing existing files");
-        std::fs::remove_dir_all(destination)?;
+        std::fs::remove_dir_all(&destination)?;
     }
 
-    std::fs::create_dir_all(destination)?;
-    ignore_path(destination)?;
+    std::fs::create_dir_all(&destination)?;
+    if ignore {
+        ignore_path(destination.as_path())?;
+    }
 
-    copy_dir(source, destination)?;
+    let returned_paths = copy_dir(&source, &destination)?;
 
-    Ok(())
+    Ok(returned_paths)
 }
 
 fn clean_up_old_paths(manifest: &Manifest) -> Result<()> {
@@ -102,17 +127,32 @@ fn clean_up_old_paths(manifest: &Manifest) -> Result<()> {
     Ok(())
 }
 
-fn copy_dir(src: impl AsRef<Path>, dest: impl AsRef<Path>) -> io::Result<()> {
+fn copy_dir(src: impl AsRef<Path>, dest: impl AsRef<Path>) -> Result<Vec<Box<Path>>> {
     fs::create_dir_all(&dest)?;
+
+    let mut to_return: Vec<Box<Path>> = Vec::new();
+
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let file_type = entry.file_type()?;
+        let dest = dest.as_ref().join(entry.file_name());
         if file_type.is_dir() {
-            copy_dir(entry.path(), dest.as_ref().join(entry.file_name()))?;
+            let result = copy_dir(entry.path(), dest)?;
+            to_return.extend(result);
         } else {
             debug!("Copying file {}", entry.path().display());
-            fs::copy(entry.path(), dest.as_ref().join(entry.file_name()))?;
+            fs::copy(entry.path(), &dest)?;
+            to_return.push(Box::from(dest));
         }
     }
-    Ok(())
+    Ok(to_return)
+}
+
+impl Default for SyncOptions {
+    fn default() -> Self {
+        Self {
+            base_path: PathBuf::from("."),
+            ignore_generated: true,
+        }
+    }
 }

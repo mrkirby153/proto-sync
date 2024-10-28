@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     let store_path = get_store_path()?;
     ignore_path(&store_path)?;
 
-    sync_protobufs(&manifest)?;
+    sync_protobufs(&manifest, None)?;
 
     Ok(())
 }
