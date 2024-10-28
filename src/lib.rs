@@ -1,7 +1,6 @@
 use std::{
     collections::HashSet,
     fs::{self, remove_dir_all},
-    io,
     path::{Path, PathBuf},
 };
 
@@ -72,12 +71,7 @@ fn deploy_protos(
     base_path: &Path,
     ignore: bool,
 ) -> Result<Vec<Box<Path>>> {
-    let dest_dir = &entry.dest_directory;
-    let destination = if let Some(dest_dir) = dest_dir {
-        base_path.join(dest_dir)
-    } else {
-        base_path.join(&entry.src_directory)
-    };
+    let destination = base_path.join(entry.get_dest_directory());
     let source = source.join(&entry.src_directory);
     debug!(
         "Copying proto files from {} to {}",
@@ -108,8 +102,6 @@ fn clean_up_old_paths(manifest: &Manifest) -> Result<()> {
         let key = digest(entry.url.as_bytes());
         seen_paths.insert(key);
     }
-
-    info!("Seen paths: {:?}", seen_paths);
 
     for entry in std::fs::read_dir(&store_path)? {
         let entry = entry?;

@@ -19,7 +19,7 @@ pub struct ManifestEntry {
     /// The path in the directory where the protobufs are located
     pub src_directory: String,
     /// The path in the target project where protobufs should be copied to. If left blank, it is assumed to be the same as `src_directory`
-    pub dest_directory: Option<String>,
+    dest_directory: Option<String>,
 }
 
 impl Manifest {
@@ -28,5 +28,38 @@ impl Manifest {
         let contents = std::fs::read_to_string(path)?;
         let manifest: Manifest = toml::from_str(&contents)?;
         Ok(manifest)
+    }
+
+    pub fn save(&self, path: &Path) -> Result<()> {
+        let contents = toml::to_string(self)?;
+        std::fs::write(path, contents)?;
+        Ok(())
+    }
+
+    /// Adds an entry to the manifest file
+    pub fn add_entry(&mut self, entry: ManifestEntry) {
+        self.entries.push(entry);
+    }
+}
+
+impl ManifestEntry {
+    pub fn new(
+        url: String,
+        rev: String,
+        src_directory: String,
+        dest_directory: Option<String>,
+    ) -> Self {
+        Self {
+            url,
+            rev,
+            src_directory,
+            dest_directory,
+        }
+    }
+
+    pub fn get_dest_directory(&self) -> &str {
+        self.dest_directory
+            .as_deref()
+            .unwrap_or(&self.src_directory)
     }
 }

@@ -8,7 +8,7 @@ use crate::{
     sync_protobufs, SyncOptions,
 };
 
-/// Synchronizes all protobuf files in the manifest. This function should generally be called from `buidl.rs`
+/// Synchronizes all protobuf files in the manifest. This function should generally be called from `build.rs`
 pub fn synchronize_protobufs(manifest_path: &str) -> Result<Vec<Box<Path>>> {
     println!("cargo::rerun-if-changed={}", manifest_path);
     let manifest = Manifest::load(Path::new("proto-sync.toml"))?;

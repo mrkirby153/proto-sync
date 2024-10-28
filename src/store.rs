@@ -14,6 +14,8 @@ pub fn get_store_path() -> Result<PathBuf> {
         create_dir_all(path)?;
     }
 
+    ignore_path(path)?;
+
     Ok(path.into())
 }
 
