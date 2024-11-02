@@ -3,7 +3,7 @@ use std::path::Path;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, Default)]
 pub struct Manifest {
     /// A list of manifest entries declaring what protobufs to download
     #[serde(rename = "entry")]
@@ -25,7 +25,19 @@ pub struct ManifestEntry {
 impl Manifest {
     /// Loads a manifest from the given path
     pub fn load(path: &Path) -> Result<Self> {
-        let contents = std::fs::read_to_string(path)?;
+        let contents = match std::fs::read_to_string(path) {
+            Ok(contents) => contents,
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::NotFound {
+                    let default = Self::default();
+                    default.save(path)?;
+                    return Ok(default);
+                } else {
+                    return Err(err.into());
+                }
+            }
+        };
+
         let manifest: Manifest = toml::from_str(&contents)?;
         Ok(manifest)
     }
