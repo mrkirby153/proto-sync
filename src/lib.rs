@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::Result;
+use color_print::cprintln;
 use manifest::{Manifest, ManifestEntry};
 use sha256::digest;
 use store::{get_store_path, ignore_path};
@@ -34,7 +35,10 @@ pub fn sync_protobufs(
     let mut generated_protos = Vec::new();
 
     for entry in &manifest.entries {
-        info!("Synchronizing protofs from {}", entry.url);
+        cprintln!(
+            "[<blue>-</>] Synchronizing protobufs from <yellow>{}</>",
+            entry.url
+        );
 
         // Clone the URL into the store
         let key = digest(entry.url.as_bytes());
@@ -44,11 +48,18 @@ pub fn sync_protobufs(
             // Clone down the repo if we haven't already
             seen_paths.insert(key);
 
-            info!("Updating {}", entry.url);
+            cprintln!("[<blue>-</>] Updating repository <yellow>{}</>", entry.url);
             git::update_repo(&entry.url, &destination, &entry.rev)?;
-            info!("Updated {}", entry.url);
+            cprintln!(
+                "[<green>-</>] Updated <yellow>{}</> to <blue>{}",
+                entry.url,
+                entry.rev
+            );
         } else {
-            info!("Already updated {}", entry.url);
+            cprintln!(
+                "[<yellow>!</>] <yellow>{}</> has already been updated. Skipping...",
+                entry.url
+            );
         }
 
         let result = deploy_protos(
@@ -73,8 +84,9 @@ fn deploy_protos(
 ) -> Result<Vec<Box<Path>>> {
     let destination = base_path.join(entry.get_dest_directory());
     let source = source.join(&entry.src_directory);
-    debug!(
-        "Copying proto files from {} to {}",
+
+    cprintln!(
+        "[<blue>-</>] Copying proto files from <yellow>{}</> to <yellow>{}</>",
         source.display(),
         destination.display()
     );
@@ -111,7 +123,10 @@ fn clean_up_old_paths(manifest: &Manifest) -> Result<()> {
         }
         let file_name = path.file_name().unwrap().to_str().unwrap();
         if !seen_paths.contains(file_name) {
-            debug!("Removing old repository {}", path.display());
+            cprintln!(
+                "[<red>-</>] Removing old repository <yellow>{}</>",
+                path.display()
+            );
             remove_dir_all(path)?;
         }
     }

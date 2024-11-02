@@ -1,7 +1,8 @@
-use std::path::Path;
+use std::{path::Path, process::ExitCode};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use color_print::{cprint, cprintln};
 use proto_sync::{manifest::Manifest, sync_protobufs};
 use tracing::{debug, info, warn};
 
@@ -45,7 +46,7 @@ enum Commands {
     Clean,
 }
 
-fn main() -> Result<()> {
+fn main() -> Result<ExitCode> {
     tracing_subscriber::fmt::init();
 
     let cli = Cli::parse();
@@ -62,7 +63,8 @@ fn main() -> Result<()> {
         Commands::Sync => {
             debug!("Synchronizing protobufs");
             sync_protobufs(&manifest, None)?;
-            Ok(())
+            cprintln!("[<green>+</>] Synchronization complete");
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Add {
             url,
@@ -73,19 +75,25 @@ fn main() -> Result<()> {
             let existing = manifest.entries.iter().find(|entry| entry.url == url);
 
             if existing.is_some() {
-                warn!("An entry with the URL {} already exists. Skipping", url);
-                return Ok(());
+                cprintln!(
+                    "[<yellow>!</>] An entry with the URL <yellow>{}</> already exists.",
+                    url
+                );
+                return Ok(ExitCode::FAILURE);
             }
 
-            let entry = proto_sync::manifest::ManifestEntry::new(url, rev, path, dest);
+            let entry = proto_sync::manifest::ManifestEntry::new(url, rev, path.clone(), dest);
             debug!("Adding entry to manifest: {:?}", entry);
             manifest.add_entry(entry);
             manifest.save(Path::new(&manifest_file))?;
-            info!("Added entry to manifest. Run `proto-sync sync` to synchronize the new entry");
-            Ok(())
+            cprintln!(
+                "[<green>+</>] Added entry with path <yellow>{}</> and revision <green>{}</> to manifest. Run <blue>proto-sync sync</> to synchronize the new entry",
+                path,
+            );
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Remove { path, cleanup } => {
-            info!("Removing entry with path {}", path);
+            cprintln!("[<red>-</>] Removing entry with path <yellow>{}</>", path);
 
             let existing = manifest
                 .entries
@@ -106,7 +114,7 @@ fn main() -> Result<()> {
                 debug!("Removed entry from manifest");
 
                 if cleanup {
-                    info!("Cleaning up files");
+                    cprintln!("[<blue>-</>] Cleaning up generated files");
                     let dst = entry.get_dest_directory();
                     let path = Path::new(dst);
                     if path.exists() {
@@ -117,38 +125,42 @@ fn main() -> Result<()> {
                 manifest.entries.remove(index);
                 manifest.save(manifest_file)?;
             } else {
-                warn!("No entry found with path {}", path);
+                cprintln!(
+                    "[<yellow>!</>] No entry with path <yellow>{}</> found",
+                    path
+                );
             }
             manifest.save(Path::new(&manifest_file))?;
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Commands::List => {
-            info!("Listing all entries in the manifest file");
             for entry in manifest.entries {
-                info!("URL: {}", entry.url);
-                info!("Revision: {}", entry.rev);
-                info!("Source directory: {}", entry.src_directory);
                 let dest_directory = entry.get_dest_directory();
-                info!("Destination directory: {}", dest_directory);
-                info!("---")
+                cprintln!("<yellow>{}</>", dest_directory);
+                cprintln!("  URL: <blue>{}</>", entry.url);
+                cprintln!("  Revision: <blue>{}</>", entry.rev);
+                cprintln!("  Source directory: <yellow>{}</>", entry.src_directory);
             }
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
         Commands::Clean => {
-            info!("Removing all generated files");
+            cprintln!("[<yellow>!</>] Cleaning up generated files");
 
             for entry in &manifest.entries {
                 let dest = entry.get_dest_directory();
                 let path = Path::new(dest);
                 if path.exists() {
-                    info!("Removing path {}", path.display());
+                    cprintln!("[<red>-</>] Removing path <yellow>{}</>", path.display());
                     std::fs::remove_dir_all(path)?;
                 } else {
-                    warn!("Path {} does not exist. Skipping", path.display());
+                    cprintln!(
+                        "[<yellow>!</>] Path <yellow>{}</> does not exist. Skipping",
+                        path.display()
+                    );
                 }
             }
 
-            Ok(())
+            Ok(ExitCode::SUCCESS)
         }
     }
 }
