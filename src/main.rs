@@ -2,9 +2,9 @@ use std::{path::Path, process::ExitCode};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use color_print::{cprint, cprintln};
+use color_print::cprintln;
 use proto_sync::{manifest::Manifest, sync_protobufs};
-use tracing::{debug, info, warn};
+use tracing::debug;
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]

@@ -9,7 +9,7 @@ use color_print::cprintln;
 use manifest::{Manifest, ManifestEntry};
 use sha256::digest;
 use store::{get_store_path, ignore_path};
-use tracing::{debug, info};
+use tracing::debug;
 
 pub mod git;
 pub mod manifest;
