@@ -14,7 +14,7 @@ struct Cli {
     manifest_file: Option<String>,
 
     #[command(subcommand)]
-    command: Option<Commands>,
+    command: Commands,
 }
 
 #[derive(Subcommand)]
@@ -57,7 +57,7 @@ fn main() -> Result<ExitCode> {
     debug!("Loading manifest from {}", manifest_file.display());
     let mut manifest = Manifest::load(manifest_file)?;
 
-    let command = cli.command.unwrap_or(Commands::Sync);
+    let command = cli.command;
 
     match command {
         Commands::Sync => {
