@@ -29,9 +29,7 @@ impl Manifest {
             Ok(contents) => contents,
             Err(err) => {
                 if err.kind() == std::io::ErrorKind::NotFound {
-                    let default = Self::default();
-                    default.save(path)?;
-                    return Ok(default);
+                    return Ok(Self::default());
                 } else {
                     return Err(err.into());
                 }
